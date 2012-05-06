@@ -1,3 +1,2 @@
 all:
-	rm *.o
-	g++ -c *.cpp 
+	g++ -c *.cpp  

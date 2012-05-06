@@ -1,0 +1,2 @@
+0. write the naive version
+1. use a leader/follower design pattern to design a new thread pool.

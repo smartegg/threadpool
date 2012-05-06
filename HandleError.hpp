@@ -20,7 +20,13 @@ extern void handleError(const char* filename, const char* funcname,
 #define NDSL_ASSERT(r) \
   if (r!=0) handle_error(true)
 
-#define dbg(a,b) \
+#define NDSL_FAIL() \
+    handle_error(false)
+
+#define NOTSUPPORT() \
+    handle_error(false)
+
+#define NDSL_DEBUG(a,b) \
   std::cout <<#a <<'\t' << a << '\t' << #b << '\t' << b << std::endl
 
 #endif //_NDSL_HANDLE_ERROR_H_
