@@ -58,15 +58,14 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
      */
     virtual void addTask(Task& task);
 
+
     /**
-     * @brief start
-     *  start runnning this threadpool, the thread will be in a dead loop,
-     *    manage the tasks and dispatch tasks to his worker threads.
-     *    threadpool will create @minCap number threads at first.
-     *    use must use allocateThreads() method to increase the threads if
-     *    they want to more threads, or use killIdleThreads()  to delete idle threads.
+     * @brief allocateThreads
+     *  allocate new threads to handle the tasks.
+     * @param num
+     * @return the num of threads actually successfully allocated.
      */
-    virtual void start();
+    int allocateThreads(size_t num);
 
 
 
@@ -83,6 +82,16 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
     virtual void stop();
 
   private:
+    /**
+     * @brief start
+     *  start runnning this threadpool, the thread will be in a dead loop,
+     *    manage the tasks and dispatch tasks to his worker threads.
+     *    threadpool will create @minCap number threads at first.
+     *    use must use allocateThreads() method to increase the threads if
+     *    they want to more threads, or use killIdleThreads()  to delete idle threads.
+     */
+    static void* start(void *arg);
+
     NaiveThreadPoolImpl(const NaiveThreadPoolImpl&);
     const NaiveThreadPoolImpl& operator=(const NaiveThreadPoolImpl&);
 
@@ -99,6 +108,7 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
 inline void  NaiveThreadPoolImpl::stop() {
   stop_ = true;
 }
+
 } //namespace ndsl
 
 

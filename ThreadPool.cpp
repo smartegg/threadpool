@@ -24,5 +24,6 @@ ThreadPool::ThreadPool(int minCap, int maxCap, THREAD_POOL_TYPE type) {
 ThreadPool::~ThreadPool() {
   delete pImpl_;
 }
+
 } //namespace ndsl
 

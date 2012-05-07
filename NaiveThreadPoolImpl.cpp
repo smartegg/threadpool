@@ -8,12 +8,15 @@
  */
 #include "NaiveThreadPoolImpl.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <pthread.h>
 #include "Mutex.hpp"
 #include "Thread.hpp"
 #include "Mutex.hpp"
 #include "CriticalRegion.hpp"
+#include "HandleError.hpp"
+
 
 
 namespace ndsl {
@@ -99,6 +102,29 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
   for (size_t i = 0; i < minCap; ++i) {
     threads_.push_back(new NaiveThread());
   }
+  pthread_t tid;
+  int err = pthread_create(&tid, 0, start, this);
+  NDSL_ASSERT(err);
+}
+
+NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
+  typedef std::list<NaiveThread*>::iterator Iter;
+
+  for(Iter iter= threads_.begin(); iter != threads_.end(); ++iter) {
+    delete *iter;
+  }
+}
+
+int NaiveThreadPoolImpl::allocateThreads(size_t num) {
+  int maxnum = maxCap_ - threads_.size();
+  maxnum = std::min(maxnum, (int)num);
+
+  for (size_t i = 0; i < maxnum; ++i) {
+    threads_.push_back(new NaiveThread());
+  }
+
+
+  return maxnum;
 }
 
 int NaiveThreadPoolImpl::numBusyThreads() const {
@@ -131,27 +157,28 @@ void NaiveThreadPoolImpl::addTask(Task& task) {
   receiveTask_.set();
 }
 
-void NaiveThreadPoolImpl::start() {
+void* NaiveThreadPoolImpl::start(void* arg) {
   typedef std::list<NaiveThread*>::iterator Iter;
+  NaiveThreadPoolImpl* pool = reinterpret_cast<NaiveThreadPoolImpl*> (arg);
 
-  for (; !stop_;) {
-    if (tasks_.size() == 0) {
+  for (; !pool->stop_;) {
+    if (pool->tasks_.size() == 0) {
       //TODO: think this method is right or not ?
-      receiveTask_.wait();
+      pool->receiveTask_.wait();
     }
 
-    for (Iter it = threads_.begin(); it != threads_.end(); ++it) {
+    for (Iter it = pool->threads_.begin(); it != pool->threads_.end(); ++it) {
 
-      if (tasks_.size() == 0) {
+      if (pool->tasks_.size() == 0) {
         break;
       }
 
       if ((*it)->isIdle()) {
         Task* task;
         {
-          CriticalRegion  region(tasksLock_);
-          task = tasks_.front();
-          tasks_.pop_front();
+          CriticalRegion  region(pool->tasksLock_);
+          task =pool->tasks_.front();
+          pool->tasks_.pop_front();
         }
 
         (*it)->receiveTask(*task);

@@ -11,9 +11,9 @@
 #define _NDSL_THREAD_POOL_HPP_
 
 #include "ThreadPoolImpl.hpp"
+#include "Task.hpp"
 namespace ndsl {
 
-class Task;
 
 /**
  * @brief ThreadPool
@@ -85,16 +85,6 @@ class ThreadPool {
     void addTask(Task& task);
 
     /**
-     * @brief start
-     *  start runnning this threadpool, the thread will be in a dead loop,
-     *    manage the tasks and dispatch tasks to his worker threads.
-     *    threadpool will create @minCap number threads at first.
-     *    use must use allocateThreads() method to increase the threads if
-     *    they want to more threads, or use killIdleThreads()  to delete idle threads.
-     */
-    void start();
-
-    /**
      * @brief allocateThreads
      *  allocate new threads to handle the tasks.
      * @param num
@@ -112,6 +102,7 @@ class ThreadPool {
      */
     int killIdleThreads(size_t num);
 
+    void stop();
 
 
   private:
@@ -140,8 +131,13 @@ inline int ThreadPool::numRunningThreads() const {
   return pImpl_->numRunningThreads();
 }
 
-inline void ThreadPool::start() {
-  return pImpl_->start();
+
+inline int ThreadPool::allocateThreads(size_t num) {
+  return pImpl_->allocateThreads(num);
+}
+
+inline void ThreadPool::stop() {
+  pImpl_->stop();
 }
 
 }//namespace ndsl
