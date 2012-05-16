@@ -18,10 +18,6 @@ namespace ndsl {
 
 Thread::Thread() : task_(0) , kill_(false) {
 
-  int err = pthread_create(&thread_, NULL, run, this);
-  NDSL_ASSERT(err);
-  err = pthread_detach(thread_);
-  NDSL_ASSERT(err);
 }
 
 Thread::~Thread() {
@@ -29,27 +25,27 @@ Thread::~Thread() {
 }
 
 void* Thread::run(void* arg) {
-  Thread* pThread = reinterpret_cast<Thread*>(arg);
 
-  for (; !pThread->kill_;) {
-    pThread->ready_.wait();
-    pThread->task_->run();
-    pThread->task_ = 0;
-  }
+  Thread* pThread = reinterpret_cast<Thread*>(arg);
+  pThread->ready_.wait();
+
+  pThread->task_->run();
+  pThread->task_ = 0;
 
   return 0;
 }
 
 void Thread::start(Task& task) {
 
-  {
-    CriticalRegion  region(taskLock_);
-
-    if (task_ != 0) {
-      NDSL_FAIL();
-    }
-    task_ = &task;
+  if (task_ != 0) {
+    NDSL_FAIL();
   }
+
+  task_ = &task;
+  int err = pthread_create(&thread_, NULL, run, this);
+  NDSL_ASSERT(err);
+  err = pthread_detach(thread_);
+  NDSL_ASSERT(err);
   ready_.set();
 }
 

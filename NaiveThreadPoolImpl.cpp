@@ -25,7 +25,7 @@ namespace ndsl {
  * @brief NaiveThread
  *  the thread which the NaiveThreadpool manage
  */
-class NaiveThread {
+class NaiveThread : public Task {
   public:
     /**
      * @brief NaiveThread
@@ -35,14 +35,14 @@ class NaiveThread {
     virtual ~NaiveThread();
 
     /**
-    * @brief receiveTask
+    * @brief getTask
     *
     * @param task the task need to run
     *
     * @returns whether successfully push the task,
     *            failed becase the thread is busy running.
     */
-    bool receiveTask(Task& task);
+    bool getTask(Task& task);
     /**
      * @brief isIdle
      *
@@ -56,42 +56,73 @@ class NaiveThread {
      */
     void kill();
 
+    void start();
+
+    void run();
+
 
   private:
     Thread thread_;
+    volatile bool kill_;//or use atomic_t  instead of volatile ?  need  to lock kill_ ?
+    Task* task_;
+    mutable Mutex taskLocker_; //really need this ?
+
+    Event ready_;
+    Event getTask_;
 
     NaiveThread(const NaiveThread&);
     const NaiveThread& operator=(const NaiveThread&);
 };
 
-NaiveThread::NaiveThread() {
+NaiveThread::NaiveThread() : kill_(false), task_(0) {
 
 }
 
 
 NaiveThread::~NaiveThread() {
-
+  kill();
 }
 
-bool NaiveThread::receiveTask(Task& task) {
-  if (thread_.isIdle()) {
-    return false;
+bool NaiveThread::getTask(Task& task) {
+  CriticalRegion region(taskLocker_);
 
-  } else {
-    thread_.start(task);
-    return true;
+  if (task_ != 0) {
+    return false;
   }
+
+  task_ = &task;
+  getTask_.set();
+  return true;
 }
 
 bool NaiveThread::isIdle() const {
-  return thread_.isIdle();
+  CriticalRegion region(taskLocker_);
+  return task_ == 0;
 }
 
 void NaiveThread::kill() {
-  //TODO: think if we need to join the thread to die ?
-  //       we just notify to kill by it self.
-  thread_.kill();
+  kill_ = true;
 }
+
+void NaiveThread::start() {
+  thread_.start(*this);
+  ready_.wait();
+}
+
+void NaiveThread::run() {
+  ready_.set();
+
+  for (; !kill_;) {
+    getTask_.wait();
+    task_->run();
+    {
+      CriticalRegion  region(taskLocker_);
+      task_ = 0;
+    }
+  }
+}
+
+
 
 
 NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
@@ -100,8 +131,11 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
     maxCap_(maxCap),
     stop_(false) {
   for (size_t i = 0; i < minCap; ++i) {
-    threads_.push_back(new NaiveThread());
+    NaiveThread* pThread = new NaiveThread();
+    threads_.push_back(pThread);
+    pThread->start();
   }
+
   pthread_t tid;
   int err = pthread_create(&tid, 0, start, this);
   NDSL_ASSERT(err);
@@ -110,7 +144,7 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
 NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
   typedef std::list<NaiveThread*>::iterator Iter;
 
-  for(Iter iter= threads_.begin(); iter != threads_.end(); ++iter) {
+  for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
     delete *iter;
   }
 }
@@ -159,7 +193,7 @@ void NaiveThreadPoolImpl::addTask(Task& task) {
 
 void* NaiveThreadPoolImpl::start(void* arg) {
   typedef std::list<NaiveThread*>::iterator Iter;
-  NaiveThreadPoolImpl* pool = reinterpret_cast<NaiveThreadPoolImpl*> (arg);
+  NaiveThreadPoolImpl* pool = reinterpret_cast<NaiveThreadPoolImpl*>(arg);
 
   for (; !pool->stop_;) {
     if (pool->tasks_.size() == 0) {
@@ -177,7 +211,7 @@ void* NaiveThreadPoolImpl::start(void* arg) {
         Task* task;
         {
           CriticalRegion  region(pool->tasksLock_);
-          task =pool->tasks_.front();
+          task = pool->tasks_.front();
           pool->tasks_.pop_front();
         }
 

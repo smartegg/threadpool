@@ -11,7 +11,6 @@
 
 #include <pthread.h>
 #include "Event.hpp"
-#include "Mutex.hpp"
 
 
 namespace ndsl {
@@ -25,9 +24,6 @@ class Thread {
 
     void start(Task& task);
 
-    bool isIdle() const;
-
-    void kill();
 
     pthread_t tid() const;
 
@@ -37,9 +33,7 @@ class Thread {
   private:
     pthread_t thread_;
     Task* task_;
-    Mutex taskLock_;
 
-    bool kill_;
     Event ready_;
 
     Thread(const Thread &);
@@ -49,14 +43,6 @@ class Thread {
 
 inline pthread_t Thread::tid() const {
   return pthread_self();
-}
-
-inline bool Thread::isIdle() const{
-  return task_ == 0;
-}
-
-inline void Thread::kill() {
-  kill_ = true;
 }
 
 } //namespace ndsl
