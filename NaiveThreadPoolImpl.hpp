@@ -16,6 +16,7 @@
 #include "Task.hpp"
 #include "Event.hpp"
 #include "Mutex.hpp"
+#include "Thread.hpp"
 
 
 namespace ndsl {
@@ -25,7 +26,7 @@ class NaiveThread;
  * @brief NaiveThreadPoolImpl
  * this class impl a master/slave threadpool.
  * */
-class NaiveThreadPoolImpl : public ThreadPoolImpl {
+class NaiveThreadPoolImpl : public  Task, public ThreadPoolImpl {
   public:
     NaiveThreadPoolImpl(int minCap, int maxCap);
     virtual ~NaiveThreadPoolImpl();
@@ -49,6 +50,12 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
      * @returns   the number of threads that are running currently.
      */
     virtual int numRunningThreads() const;
+
+    /**
+     * @brief start
+     *   block untill all worker/master threads  in the pool start to run.
+     */
+    virtual void start() ;
 
 
     /**
@@ -83,14 +90,14 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
 
   private:
     /**
-     * @brief start
+     * @brief run
      *  start runnning this threadpool, the thread will be in a dead loop,
      *    manage the tasks and dispatch tasks to his worker threads.
      *    threadpool will create @minCap number threads at first.
      *    use must use allocateThreads() method to increase the threads if
      *    they want to more threads, or use killIdleThreads()  to delete idle threads.
      */
-    static void* start(void *arg);
+    void run();
 
     NaiveThreadPoolImpl(const NaiveThreadPoolImpl&);
     const NaiveThreadPoolImpl& operator=(const NaiveThreadPoolImpl&);
@@ -103,6 +110,9 @@ class NaiveThreadPoolImpl : public ThreadPoolImpl {
     std::deque<Task*> tasks_;
     Mutex tasksLock_;
     Event receiveTask_;
+
+    mutable Thread masterThread_;
+    Event ready_;
 };
 
 inline void  NaiveThreadPoolImpl::stop() {

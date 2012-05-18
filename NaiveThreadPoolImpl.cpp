@@ -26,7 +26,7 @@ namespace ndsl {
  * @brief NaiveThread
  *  the thread which the NaiveThreadpool manage
  */
-class NaiveThread : public Task {
+class NaiveThread : private Task {
   public:
     /**
      * @brief NaiveThread
@@ -58,11 +58,11 @@ class NaiveThread : public Task {
     void kill();
 
     void start();
-  protected:
-    void run();
 
 
   private:
+    void run();
+
     Thread thread_;
     volatile bool kill_;//or use atomic_t  instead of volatile ?  need  to lock kill_ ?
     Task* volatile task_;
@@ -118,8 +118,6 @@ void NaiveThread::run() {
 }
 
 
-
-
 NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
   : ThreadPoolImpl(minCap, maxCap),
     minCap_(minCap),
@@ -130,7 +128,16 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
     threads_.push_back(pThread);
     pThread->start();
   }
+}
 
+
+void NaiveThreadPoolImpl::start() {
+  typedef std::list<NaiveThread*>::const_iterator Iter;
+  for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
+    (*iter)->start();
+  }
+  masterThread_.start(*this);
+  ready_.wait();
 }
 
 NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
@@ -146,7 +153,9 @@ int NaiveThreadPoolImpl::allocateThreads(size_t num) {
   maxnum = std::min(maxnum, (int)num);
 
   for (size_t i = 0; i < maxnum; ++i) {
-    threads_.push_back(new NaiveThread());
+    NaiveThread* pThread = new NaiveThread();
+    threads_.push_back(pThread);
+    pThread->start();
   }
 
   return maxnum;
@@ -176,34 +185,35 @@ int NaiveThreadPoolImpl::numRunningThreads() const {
 
 void NaiveThreadPoolImpl::addTask(Task& task) {
   {
-    CriticalRegion  region(tasksLock_);
+    CriticalRegion  guard(tasksLock_);
     tasks_.push_back(&task);
   }
   receiveTask_.set();
 }
 
-void* NaiveThreadPoolImpl::start(void* arg) {
+void NaiveThreadPoolImpl::run() {
   typedef std::list<NaiveThread*>::iterator Iter;
-  NaiveThreadPoolImpl* pool = reinterpret_cast<NaiveThreadPoolImpl*>(arg);
 
-  for (; !pool->stop_;) {
-    if (pool->tasks_.size() == 0) {
-      //TODO: think this method is right or not ?
-      pool->receiveTask_.wait();
+  ready_.set();
+
+  for (; !stop_;) {
+    if (tasks_.size() == 0) {
+      //FIXME: rethink this solution is right
+      receiveTask_.wait();
     }
 
-    for (Iter it = pool->threads_.begin(); it != pool->threads_.end(); ++it) {
+    for (Iter it = threads_.begin(); it != threads_.end(); ++it) {
 
-      if (pool->tasks_.size() == 0) {
+      if (tasks_.size() == 0) {
         break;
       }
 
       if ((*it)->isIdle()) {
         Task* task;
-        {
-          CriticalRegion  region(pool->tasksLock_);
-          task = pool->tasks_.front();
-          pool->tasks_.pop_front();
+        {//pick one task from the front of the double-link-list
+          CriticalRegion  guard(tasksLock_);
+          task = tasks_.front();
+          tasks_.pop_front();
         }
 
         (*it)->getTask(*task);
@@ -223,15 +233,14 @@ int NaiveThreadPoolImpl::killIdleThreads(size_t num) {
   for (Iter iter = threads_.begin();
        iter != threads_.end() && numDeleted < num;)  {
     if ((*iter)->isIdle()) {
+      //FIXME:consider sync or async here?
       (*iter)->kill();
       ++numDeleted;
       iter = threads_.erase(iter);
-
     } else {
       ++iter;
     }
   }
-
   return numDeleted;
 }
 

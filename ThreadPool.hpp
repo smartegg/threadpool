@@ -104,6 +104,8 @@ class ThreadPool {
 
     void stop();
 
+    void start();
+
 
   private:
     ThreadPoolImpl* pImpl_;
@@ -116,8 +118,6 @@ class ThreadPool {
 inline void ThreadPool::addTask(Task& task) {
   pImpl_->addTask(task);
 }
-
-
 
 inline int ThreadPool::numBusyThreads() const {
   return pImpl_->numBusyThreads();
@@ -138,6 +138,10 @@ inline int ThreadPool::allocateThreads(size_t num) {
 
 inline void ThreadPool::stop() {
   pImpl_->stop();
+}
+
+inline void ThreadPool::start() {
+  pImpl_->start();
 }
 
 }//namespace ndsl

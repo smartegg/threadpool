@@ -74,6 +74,12 @@ class ThreadPoolImpl {
      */
     virtual void stop() = 0;
 
+    /**
+     * @brief start
+     *  start this threadpool
+     */
+    virtual void start() = 0;
+
   private:
     ThreadPoolImpl(const ThreadPoolImpl&);
     const ThreadPoolImpl& operator=(const ThreadPoolImpl&);
