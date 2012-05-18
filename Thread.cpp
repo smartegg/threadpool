@@ -16,7 +16,7 @@
 
 namespace ndsl {
 
-Thread::Thread() : task_(0) , kill_(false) {
+Thread::Thread() : task_(0) {
 
 }
 
@@ -25,9 +25,7 @@ Thread::~Thread() {
 }
 
 void* Thread::run(void* arg) {
-
   Thread* pThread = reinterpret_cast<Thread*>(arg);
-  pThread->ready_.wait();
 
   pThread->task_->run();
   pThread->task_ = 0;
@@ -36,7 +34,6 @@ void* Thread::run(void* arg) {
 }
 
 void Thread::start(Task& task) {
-
   if (task_ != 0) {
     NDSL_FAIL();
   }
@@ -46,8 +43,8 @@ void Thread::start(Task& task) {
   NDSL_ASSERT(err);
   err = pthread_detach(thread_);
   NDSL_ASSERT(err);
-  ready_.set();
 }
+
 
 
 } //namespace ndsl

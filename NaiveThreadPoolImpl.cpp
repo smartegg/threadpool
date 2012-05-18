@@ -16,6 +16,7 @@
 #include "Mutex.hpp"
 #include "CriticalRegion.hpp"
 #include "HandleError.hpp"
+#include "Task.hpp"
 
 
 
@@ -57,15 +58,14 @@ class NaiveThread : public Task {
     void kill();
 
     void start();
-
+  protected:
     void run();
 
 
   private:
     Thread thread_;
     volatile bool kill_;//or use atomic_t  instead of volatile ?  need  to lock kill_ ?
-    Task* task_;
-    mutable Mutex taskLocker_; //really need this ?
+    Task* volatile task_;
 
     Event ready_;
     Event getTask_;
@@ -84,7 +84,6 @@ NaiveThread::~NaiveThread() {
 }
 
 bool NaiveThread::getTask(Task& task) {
-  CriticalRegion region(taskLocker_);
 
   if (task_ != 0) {
     return false;
@@ -96,7 +95,6 @@ bool NaiveThread::getTask(Task& task) {
 }
 
 bool NaiveThread::isIdle() const {
-  CriticalRegion region(taskLocker_);
   return task_ == 0;
 }
 
@@ -115,10 +113,7 @@ void NaiveThread::run() {
   for (; !kill_;) {
     getTask_.wait();
     task_->run();
-    {
-      CriticalRegion  region(taskLocker_);
-      task_ = 0;
-    }
+    task_ = 0;
   }
 }
 
@@ -136,9 +131,6 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
     pThread->start();
   }
 
-  pthread_t tid;
-  int err = pthread_create(&tid, 0, start, this);
-  NDSL_ASSERT(err);
 }
 
 NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
@@ -156,7 +148,6 @@ int NaiveThreadPoolImpl::allocateThreads(size_t num) {
   for (size_t i = 0; i < maxnum; ++i) {
     threads_.push_back(new NaiveThread());
   }
-
 
   return maxnum;
 }
@@ -215,7 +206,7 @@ void* NaiveThreadPoolImpl::start(void* arg) {
           pool->tasks_.pop_front();
         }
 
-        (*it)->receiveTask(*task);
+        (*it)->getTask(*task);
       }
     }
   }

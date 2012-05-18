@@ -1,2 +1,9 @@
-0. write the naive version
+========================================================
+about the naive version 
+1. use two task queue algorithm instead of the one task queue method, 
+   similar with the O(1) old kernel schedule algorithm.
+   to imporove the effiency and minimise the lock numbers.
+
+==============================================================
+other
 1. use a leader/follower design pattern to design a new thread pool.
