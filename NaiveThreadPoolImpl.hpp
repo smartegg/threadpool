@@ -122,8 +122,11 @@ class NaiveThreadPoolImpl : public  Task, public ThreadPoolImpl {
     bool stop_;
 
     std::list<NaiveThread*> threads_;
+    mutable Mutex  threadsLock_;
+
     std::deque<Task*> tasks_;
-    Mutex tasksLock_;
+    mutable Mutex tasksLock_;
+
     Event receiveTask_;
 
     mutable Thread masterThread_;

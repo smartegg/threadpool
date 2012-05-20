@@ -77,7 +77,7 @@ class NaiveThread : public Task {
     void run();
 
     Thread thread_;
-    //FIXME: I think volatile is enough, but I don't know for sure.
+    //FIXME: volatile is enough, or use a atomic_t type instead?
     volatile bool kill_;
     Task* volatile task_;
     int invoked_;
@@ -125,12 +125,11 @@ bool NaiveThread::isIdle() const {
 
 void NaiveThread::kill() {
   kill_ = true;
-  getTask_.set(); // wake up the waiting/blocking thread.
+  getTask_.set(); // wake up itself if it is in waiting/blocking status.
 }
 
 void NaiveThread::start() {
   thread_.start(*this);
-  //FIXME: this will not be wakeup.
   ready_.wait();
 }
 
@@ -170,30 +169,34 @@ void NaiveThreadPoolImpl::start() {
   }
 
   masterThread_.start(*this);
-  //FIXME:
   ready_.wait();
 }
 
 NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
+
 }
 
 void NaiveThreadPoolImpl::syncStop() {
-  typedef std::list<NaiveThread*>::iterator Iter;
+
 
   stop();
   stopReady_.wait();
 
-  for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
-    (*iter)->syncKill();
-    delete *iter;
+  {
+
+    typedef std::list<NaiveThread*>::iterator Iter;
+    CriticalRegion  threadsGuard(threadsLock_);
+    for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
+      (*iter)->syncKill();
+      delete *iter;
+    }
   }
 
   masterThread_.join();
-
 }
 
 int NaiveThreadPoolImpl::allocateThreads(size_t num) {
-  //FIXME: add reentrant-semantic-support here
+  CriticalRegion  threadsGuard(threadsLock_);
   int maxnum = maxCap_ - threads_.size();
   maxnum = std::min(maxnum, (int)num);
 
@@ -207,6 +210,7 @@ int NaiveThreadPoolImpl::allocateThreads(size_t num) {
 }
 
 int NaiveThreadPoolImpl::numBusyThreads() const {
+  CriticalRegion  threadsGuard(threadsLock_);
   int numbusy = 0;
 
   for (std::list<NaiveThread*>::const_iterator it(threads_.begin());
@@ -221,10 +225,25 @@ int NaiveThreadPoolImpl::numBusyThreads() const {
 }
 
 int NaiveThreadPoolImpl::numIdleThreads() const {
-  return threads_.size() - numBusyThreads();
+  CriticalRegion  threadsGuard(threadsLock_);
+
+  int total = threads_.size();
+
+  int numbusy = 0;
+
+  for (std::list<NaiveThread*>::const_iterator it(threads_.begin());
+       it != threads_.end();
+       ++it) {
+    if (!(*it)->isIdle()) {
+      ++numbusy;
+    }
+  }
+
+  return total - numbusy;
 }
 
 int NaiveThreadPoolImpl::numRunningThreads() const {
+  CriticalRegion  threadsGuard(threadsLock_);
   return threads_.size();
 }
 
@@ -263,29 +282,39 @@ void NaiveThreadPoolImpl::run() {
       continue;
     }
 
-    //FIXME: add a critical region here , because allocateThreads can modify this data-structure.
-    for (Iter it = threads_.begin(); it != threads_.end(); ++it) {
-      if ((*it)->isIdle()) {
-        Task* task;
-        {
-          //just pick one task from the front of the double-link-list
-          CriticalRegion  guard(tasksLock_);
+    //lock order :
+    //   1)threadsGuard ,
+    //   2)tasksGuard
+    {
+      CriticalRegion  threadsGuard(threadsLock_);
 
-          if (tasks_.size() == 0) {
-            break;
+      for (Iter it = threads_.begin(); it != threads_.end(); ++it) {
+        if ((*it)->isIdle()) {
+          Task* task;
+          {
+            //just pick one task from the front of the double-link-list
+            CriticalRegion  guard(tasksLock_);
+
+            if (tasks_.size() == 0) {
+              break;
+            }
+
+            task = tasks_.front();
+            tasks_.pop_front();
           }
 
-          task = tasks_.front();
-          tasks_.pop_front();
+          (*it)->getTask(*task);
         }
-
-        (*it)->getTask(*task);
       }
+
     }
+
   }
 }
 
 int NaiveThreadPoolImpl::killIdleThreads(size_t num) {
+  CriticalRegion threadsGuard(threadsLock_);
+
   typedef std::list<NaiveThread*>::iterator Iter;
   int numDeleted = 0;
 
@@ -296,8 +325,8 @@ int NaiveThreadPoolImpl::killIdleThreads(size_t num) {
   for (Iter iter = threads_.begin();
        iter != threads_.end() && numDeleted < num;)  {
     if ((*iter)->isIdle()) {
-      //FIXME:consider sync or async here? now just use async
-      (*iter)->kill();
+      (*iter)->syncKill();
+      delete *iter;
       ++numDeleted;
       iter = threads_.erase(iter);
 
