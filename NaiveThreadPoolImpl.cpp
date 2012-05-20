@@ -24,9 +24,9 @@ namespace ndsl {
 
 /**
  * @brief NaiveThread
- *  the thread which the NaiveThreadpool manage
+ *  the worker thread managed by  the NaiveThreadpool
  */
-class NaiveThread : private Task {
+class NaiveThread : public Task {
   public:
     /**
      * @brief NaiveThread
@@ -53,19 +53,34 @@ class NaiveThread : private Task {
 
     /**
      * @brief kill
-     *   notify  this  thread to kill it self, stop its running
+     *   asyn notify  this  thread to kill it self
      */
     void kill();
 
+    /**
+     * @brief syncKill
+     *  notify this thread to kill it self , just wait until
+     *  successfully  killed
+     */
+    void syncKill();
+
     void start();
+
+    /**
+     * @brief stat
+     * show some useful info about this thread.
+     */
+    void stat();
 
 
   private:
     void run();
 
     Thread thread_;
-    volatile bool kill_;//or use atomic_t  instead of volatile ?  need  to lock kill_ ?
+    //FIXME: I think volatile is enough, but I don't know for sure.
+    volatile bool kill_;
     Task* volatile task_;
+    int invoked_;
 
     Event ready_;
     Event getTask_;
@@ -74,21 +89,31 @@ class NaiveThread : private Task {
     const NaiveThread& operator=(const NaiveThread&);
 };
 
-NaiveThread::NaiveThread() : kill_(false), task_(0) {
+NaiveThread::NaiveThread() : kill_(false), task_(0) , getTask_(true) ,
+  invoked_(0) {
 
 }
 
+void NaiveThread::syncKill() {
+  kill();
+  thread_.join();
+}
 
 NaiveThread::~NaiveThread() {
-  kill();
+}
+
+void NaiveThread::stat() {
+  printf("thread: %u\n  got %d tasks\n", (unsigned int)pthread_self(), invoked_);
 }
 
 bool NaiveThread::getTask(Task& task) {
+  //only the master thread call this method, so need not consider thread-safe.
 
   if (task_ != 0) {
     return false;
   }
 
+  invoked_++;
   task_ = &task;
   getTask_.set();
   return true;
@@ -100,10 +125,12 @@ bool NaiveThread::isIdle() const {
 
 void NaiveThread::kill() {
   kill_ = true;
+  getTask_.set(); // wake up the waiting/blocking thread.
 }
 
 void NaiveThread::start() {
   thread_.start(*this);
+  //FIXME: this will not be wakeup.
   ready_.wait();
 }
 
@@ -112,6 +139,13 @@ void NaiveThread::run() {
 
   for (; !kill_;) {
     getTask_.wait();
+
+    if (task_ == 0) {// no task, but wakeup , means maybe we want kill it.
+      continue;
+    }
+
+    stat();
+
     task_->run();
     task_ = 0;
   }
@@ -122,33 +156,44 @@ NaiveThreadPoolImpl::NaiveThreadPoolImpl(int minCap, int maxCap)
   : ThreadPoolImpl(minCap, maxCap),
     minCap_(minCap),
     maxCap_(maxCap),
-    stop_(false) {
-  for (size_t i = 0; i < minCap; ++i) {
-    NaiveThread* pThread = new NaiveThread();
-    threads_.push_back(pThread);
-    pThread->start();
-  }
+    stop_(false) ,
+    receiveTask_(true) {
+
 }
 
 
 void NaiveThreadPoolImpl::start() {
-  typedef std::list<NaiveThread*>::const_iterator Iter;
-  for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
-    (*iter)->start();
+  for (size_t i = 0; i < minCap_; ++i) {
+    NaiveThread* pThread = new NaiveThread();
+    threads_.push_back(pThread);
+    pThread->start();
   }
+
   masterThread_.start(*this);
+  //FIXME:
   ready_.wait();
 }
 
 NaiveThreadPoolImpl::~NaiveThreadPoolImpl() {
+}
+
+void NaiveThreadPoolImpl::syncStop() {
   typedef std::list<NaiveThread*>::iterator Iter;
 
+  stop();
+  stopReady_.wait();
+
   for (Iter iter = threads_.begin(); iter != threads_.end(); ++iter) {
+    (*iter)->syncKill();
     delete *iter;
   }
+
+  masterThread_.join();
+
 }
 
 int NaiveThreadPoolImpl::allocateThreads(size_t num) {
+  //FIXME: add reentrant-semantic-support here
   int maxnum = maxCap_ - threads_.size();
   maxnum = std::min(maxnum, (int)num);
 
@@ -183,6 +228,8 @@ int NaiveThreadPoolImpl::numRunningThreads() const {
   return threads_.size();
 }
 
+
+
 void NaiveThreadPoolImpl::addTask(Task& task) {
   {
     CriticalRegion  guard(tasksLock_);
@@ -196,22 +243,38 @@ void NaiveThreadPoolImpl::run() {
 
   ready_.set();
 
-  for (; !stop_;) {
-    if (tasks_.size() == 0) {
-      //FIXME: rethink this solution is right
-      receiveTask_.wait();
+  for (;;) {
+    int tasksSize = 0;
+
+    {
+      CriticalRegion  guard(tasksLock_);
+      tasksSize = tasks_.size();
     }
 
+    if (stop_ && !tasksSize) {
+      stopReady_.set();
+      break;
+    }
+
+
+
+    if (!tasksSize) {
+      receiveTask_.wait();
+      continue;
+    }
+
+    //FIXME: add a critical region here , because allocateThreads can modify this data-structure.
     for (Iter it = threads_.begin(); it != threads_.end(); ++it) {
-
-      if (tasks_.size() == 0) {
-        break;
-      }
-
       if ((*it)->isIdle()) {
         Task* task;
-        {//pick one task from the front of the double-link-list
+        {
+          //just pick one task from the front of the double-link-list
           CriticalRegion  guard(tasksLock_);
+
+          if (tasks_.size() == 0) {
+            break;
+          }
+
           task = tasks_.front();
           tasks_.pop_front();
         }
@@ -233,14 +296,16 @@ int NaiveThreadPoolImpl::killIdleThreads(size_t num) {
   for (Iter iter = threads_.begin();
        iter != threads_.end() && numDeleted < num;)  {
     if ((*iter)->isIdle()) {
-      //FIXME:consider sync or async here?
+      //FIXME:consider sync or async here? now just use async
       (*iter)->kill();
       ++numDeleted;
       iter = threads_.erase(iter);
+
     } else {
       ++iter;
     }
   }
+
   return numDeleted;
 }
 

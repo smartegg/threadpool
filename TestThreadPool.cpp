@@ -8,33 +8,69 @@
  */
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 #include "ThreadPool.hpp"
+#include "Mutex.hpp"
+#include "CriticalRegion.hpp"
 
 using namespace ndsl;
 
 namespace {
 
+volatile int f = 0;
+ndsl::Mutex fMutex;
+
 class MyTask : public ndsl::Task {
   public:
     virtual void run() {
-      //do nothing
+      CriticalRegion guard(fMutex);
+      f++;
+      usleep(1000 * 10);//suspend 10ms to allow other thread to get more tasks.
+      printf("%d\n", ::f);
     }
 };
+}
+
+TEST(TestThreadPool, runSimpleTask) {
+  ThreadPool *pool = new ThreadPool(2,16);
+
+  pool->start();
+  pool->allocateThreads(8);
+
+  for (size_t i = 0; i < 100; ++i) {
+    Task* task = new MyTask();
+    pool->addTask(*task);
+  }
+  //block and stop until all task is done, just called  you want to delete this threadpool
+  pool->syncStop();
+  delete pool;
+  EXPECT_EQ(100, ::f);
+
 }
 
 
 TEST(TestThreadPool,  InitalStatus) {
   ThreadPool pool(2, 16);
+  EXPECT_EQ(0, pool.numRunningThreads());
+
+  pool.start();
+
   EXPECT_EQ(2, pool.numIdleThreads());
   EXPECT_EQ(0, pool.numBusyThreads());
   EXPECT_EQ(2, pool.numRunningThreads());
 
+  pool.stop();
+
 }
 
-TEST(TestThreadPool, allocateThreads) {
+TEST(TestThreadPool, allocateMaxThreads) {
   ThreadPool pool(2, 16);
+  pool.start();
+
   EXPECT_EQ(10, pool.allocateThreads(10));
   EXPECT_EQ(4, pool.allocateThreads(10));
+
+  pool.stop();
 }
 
 

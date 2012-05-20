@@ -42,7 +42,7 @@ class Event {
     pthread_mutex_t mutex_;
     pthread_cond_t  cond_;
     bool reset_;
-    bool state_;
+    volatile bool state_;
 };
 
 }//namespace ndsl

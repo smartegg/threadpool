@@ -70,7 +70,7 @@ class ThreadPoolImpl {
 
     /**
      * @brief stop
-     *   stop this threadpool
+     *   use a async method to notify stop this threadpool
      */
     virtual void stop() = 0;
 
@@ -79,6 +79,12 @@ class ThreadPoolImpl {
      *  start this threadpool
      */
     virtual void start() = 0;
+
+    /**
+     * @brief syncStop
+     *    use a sync method, block until this thread successfully canceled.
+     */
+    virtual void syncStop() = 0;
 
   private:
     ThreadPoolImpl(const ThreadPoolImpl&);

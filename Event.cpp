@@ -29,33 +29,34 @@ Event::~Event() {
 }
 
 void Event::wait() {
-  //TODO: consider whether need to use  pthread_sigmask to block signals?
+  //FIXME: consider use  pthread_sigmask to block signals?
   int r(0);
 
-  for (;;) {
-    r = pthread_mutex_lock(&mutex_);
-    NDSL_ASSERT(r);
+  r = pthread_mutex_lock(&mutex_);
+  NDSL_ASSERT(r);
 
-    while (!state_) {
-      r = pthread_cond_wait(&cond_, &mutex_);
-      NDSL_ASSERT(r);
-    }
-
-    if (reset_) {
-      state_ = false;
-    }
-
-    r = pthread_mutex_unlock(&mutex_);
+  while (!state_) {
+    r = pthread_cond_wait(&cond_, &mutex_);
     NDSL_ASSERT(r);
   }
+
+  if (reset_) {
+    state_ = false;
+  }
+
+  r = pthread_mutex_unlock(&mutex_);
+  NDSL_ASSERT(r);
 }
 
 void Event::set() {
   int r(0);
 
   r = pthread_mutex_lock(&mutex_);
-  state_ = true;
+  if (r != 0) {
+    puts("error ");
+  }
   NDSL_ASSERT(r);
+  state_ = true;
 
   r = pthread_mutex_unlock(&mutex_);
   NDSL_ASSERT(r);

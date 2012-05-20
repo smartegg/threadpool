@@ -1,6 +1,7 @@
 #include "HandleError.hpp"
 
 #include <string>
+#include <cstring>
 #include <sstream>
 
 namespace ndsl {
@@ -8,7 +9,9 @@ namespace ndsl {
 void handleError(const char* filename,
                  const char* funcname,
                  const int line,
-                 bool issyserr) {
+                 bool issyserr,
+                 int err,
+                 bool needExit) {
   std::stringstream stream;
   std::string result;
   stream << line - 1; //function failed is the line before it.
@@ -23,13 +26,14 @@ void handleError(const char* filename,
   info.append("() ");
 
   if (issyserr) {
-    perror(info.c_str());
-
-  } else {
-    std::cerr << info << std::endl;
+    info.append(": ");
+    info.append(strerror(err));
   }
 
-  exit(-1);
+  std::cerr << info << std::endl;
+
+  if (needExit)
+      exit(-1);
 }
 
 

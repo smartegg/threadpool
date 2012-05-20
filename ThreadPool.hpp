@@ -86,7 +86,8 @@ class ThreadPool {
 
     /**
      * @brief allocateThreads
-     *  allocate new threads to handle the tasks.
+     *  allocate new threads to handle the tasks., block until all threads
+     *  all allocated.
      * @param num
      * @return the num of threads actually successfully allocated.
      */
@@ -105,6 +106,8 @@ class ThreadPool {
     void stop();
 
     void start();
+
+    void syncStop();
 
 
   private:
@@ -142,6 +145,10 @@ inline void ThreadPool::stop() {
 
 inline void ThreadPool::start() {
   pImpl_->start();
+}
+
+inline void ThreadPool::syncStop() {
+  pImpl_->syncStop();
 }
 
 }//namespace ndsl

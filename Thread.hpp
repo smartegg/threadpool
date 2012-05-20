@@ -27,6 +27,8 @@ class Thread {
 
     pthread_t tid() const;
 
+    void join();
+
   protected:
     static void* run(void * arg);
 
@@ -34,7 +36,6 @@ class Thread {
     pthread_t thread_;
     Task* task_;
 
-    Event ready_;
 
     Thread(const Thread &);
     const Thread& operator=(const Thread &);

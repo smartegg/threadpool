@@ -86,7 +86,22 @@ class NaiveThreadPoolImpl : public  Task, public ThreadPoolImpl {
      */
     virtual int killIdleThreads(size_t num = 0);
 
+    /**
+     * @brief stop
+     *  just  notify the threadpool to destroy all their threads , we didn't  wait it successful running
+     *  caution: you cannot  invoke this function then immediately delete this threadpool ,
+     *          because we just notify the threadpool to kill itself in a time,
+     *          but we don't know when it is killed (after all tasks left done)
+     *          so, prefer use the syncStop() version for safety
+     */
     virtual void stop();
+
+    /**
+     * @brief syncStop
+     *   we block  the  threadpool until all tasks left are done  and the threads in the threadpool all killed
+     *   caution: you can invoke this function if you really want to kill this threadpool.
+     */
+    virtual void syncStop();
 
   private:
     /**
@@ -113,10 +128,12 @@ class NaiveThreadPoolImpl : public  Task, public ThreadPoolImpl {
 
     mutable Thread masterThread_;
     Event ready_;
+    Event stopReady_;
 };
 
 inline void  NaiveThreadPoolImpl::stop() {
   stop_ = true;
+  receiveTask_.set();
 }
 
 } //namespace ndsl

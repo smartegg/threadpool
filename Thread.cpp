@@ -24,6 +24,12 @@ Thread::~Thread() {
 
 }
 
+void Thread::join() {
+  void* ptr;
+  int r = pthread_join(thread_, &ptr);
+  NDSL_ASSERT(r);
+}
+
 void* Thread::run(void* arg) {
   Thread* pThread = reinterpret_cast<Thread*>(arg);
 
@@ -40,8 +46,6 @@ void Thread::start(Task& task) {
 
   task_ = &task;
   int err = pthread_create(&thread_, NULL, run, this);
-  NDSL_ASSERT(err);
-  err = pthread_detach(thread_);
   NDSL_ASSERT(err);
 }
 
